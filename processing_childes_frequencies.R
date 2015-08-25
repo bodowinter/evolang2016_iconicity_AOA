@@ -44,7 +44,7 @@ for (i in 1:length(xlist)) {
 
 ## Cleaning the table:
 
-colnames(xdf) <- c('Age', 'Occur_100000w', 'Occur', 'No_of_transcripts', 'Freq', 'Word')
+colnames(xdf) <- c('Age', 'Freq_100000w', 'Freq', 'No_of_transcripts', 'TotalFreq', 'Word', 'LogFreq')
 
 ## Take the logarithm of frequency:
 
