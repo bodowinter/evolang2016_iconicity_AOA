@@ -48,7 +48,7 @@ colnames(xdf) <- c('Age', 'Freq_100000w', 'Freq', 'No_of_transcripts', 'TotalFre
 
 ## Take the logarithm of frequency:
 
-xdf$LogFreq <- log10(as.numeric(as.character(xdf$Freq)))
+xdf$LogFreq <- log10(as.numeric(as.character(xdf$Freq)) + 1)
 
 ## Write to table:
 
