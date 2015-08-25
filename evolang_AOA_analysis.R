@@ -4,8 +4,11 @@
 
 ## Analysis is split into three parts:
 ## (1) - Analysis of Brysbaert et al. (2014) AOA ratings
-## (2) - Analysis of MCDI usage statistics
-## (3) - Analysis of Parental Input Frequency
+## (2) - Analysis of MCDI %used, retrieved from Wordbank (%
+## (3) - Analysis of CHILDES productions
+## (4) - Analysis of MCDI raw child production data
+## (5) - Analysis of Parental Input Frequency from CHILDES
+
 
 library(ggplot2)
 library(car)
@@ -26,6 +29,8 @@ icon <- read.csv('iconicity_ratings_both.csv')
 mon <- read.csv('monaghan2014_systematicity.csv')
 mcdi <- read.csv('MCDI_item_data.csv')
 parent <- readLines('CHILDES_parentfreq.txt')		# what a messy format!
+childes <- read.csv('childes_child_freq.csv')
+wbank <- read.csv('wordbank_item_frequencies.csv')
 
 ## Clean up the parental input frequencies:
 
@@ -129,7 +134,7 @@ evidence(xmdl.icon, xmdl.sys)			# evidence ratios; 30 times more support for ico
 
 
 ##------------------------------------------------------------------
-## Part #2: MCDI analysis
+## Part #2: MCDI analysis of "proportion of children used this word"
 ##------------------------------------------------------------------
 
 ## Make into long format so that every word has a %acquired value for each month:
@@ -181,8 +186,161 @@ xmdl <- lmer(PercentAcquired ~ Written_c + Month_c + WordFreq_c +
 summary(xmdl)
 
 
+
+
 ##------------------------------------------------------------------
-## Part #3: Parental input frequency
+## Part #3: Childes production frequency
+##------------------------------------------------------------------
+
+## Add iconicity data to childes:
+
+childes$Written <- icon[match(childes$Word, icon$Word), ]$Written
+
+## Make a plot of this:
+
+quartz('', 11, 6.5)
+ggplot(childes[childes$LogFreq != 0,],
+	aes(x = Written, y = LogFreq, col = Age)) +
+	geom_point(shape = 16) +
+	geom_smooth(method = 'lm') + 
+	facet_wrap(~Age)			# what is happening here?
+
+
+
+##------------------------------------------------------------------
+## Part #4: Wordbank production frequency
+##------------------------------------------------------------------
+
+## Add iconicity data, systematicity scores and SUBTLEX frequency data to wordbank:
+
+wbank$Written <- icon[match(wbank$Word, icon$Word), ]$Written
+wbank$Systematicity <- icon[match(wbank$Word, icon$Word), ]$Systematicity
+wbank$WordFreq <- icon[match(wbank$Word, icon$Word), ]$WordFreq
+
+## Make a plot of this child production frequency against iconicity:
+
+quartz('', 11, 6.5)
+ggplot(wbank,
+	aes(x = Written, y = LogFreq, col = Age)) +
+	geom_point(shape = 16) +
+	geom_smooth(method = 'lm') + 
+	facet_wrap(~Age)
+
+## For every month, compute the fit of the Iconicity-only model:
+
+AIC_vals <- c()
+slopes <- c()
+for(i in unique(wbank$Age)) {
+	temporary_subset <- filter(wbank, Age == i)
+	
+	temporary_model <- lm(LogFreq ~ Written, temporary_subset)
+		
+	AIC_vals <- c(AIC_vals, AIC(temporary_model))
+	slopes <- c(slopes, coef(temporary_model)[2])
+	}
+
+## Plot AIC values:
+
+quartz('', 9, 6)
+plot(unique(wbank$Age), AIC_vals, type = 'l', lwd = 2)
+
+## Plot slopes:
+
+quartz('', 9, 6)
+plot(unique(wbank$Age), slopes, type = 'l', lwd = 2)
+
+## Create a measure of "inflated in child language frequency" by using SUBTLEX:
+
+wbank$InflatedFreq <- wbank$LogFreq/wbank$WordFreq
+
+## Plot this:
+
+quartz('', 11, 6.5)
+ggplot(wbank,
+	aes(x = Written, y = InflatedFreq, col = Age)) +
+	geom_point(shape = 16) +
+	geom_smooth(method = 'lm') + 
+	facet_wrap(~Age)
+
+## Take an average inflated measure for each word (across all ages):
+
+wbank_sums <- aggregate(Freq ~ Word, wbank, sum)
+wbank_sums$LogFreq <- wbank_sums$Freq
+wbank_sums$LogFreqSUBTLEX <- wbank[match(wbank_sums$Word,wbank$Word),]$WordFreq
+wbank_sums$Written <- wbank[match(wbank_sums$Word,wbank$Word),]$Written
+wbank_sums$Systematicity <- icon[match(wbank_sums$Word,icon$Word),]$Systematicity
+wbank_sums$InflatedFreq <- wbank_sums$LogFreq / wbank_sums$LogFreqSUBTLEX
+
+## Sort by inflated freq to see whether it make sense (are the highest words more 'child-y'?):
+
+head(arrange(wbank_sums, desc(InflatedFreq)))
+
+## Plot inflated freq against written iconicity:
+
+quartz('', 9, 6)
+ggplot(wbank_sums,
+	aes(x = Written, y = InflatedFreq)) +
+	geom_point(shape = 16) +
+	geom_smooth(method = 'lm')
+
+## Plot inflated freq against systematicity:
+
+quartz('', 9, 6)
+ggplot(wbank_sums,
+	aes(x = Systematicity, y = InflatedFreq)) +
+	geom_point(shape = 16) +
+	geom_smooth(method = 'lm')
+
+## Make models of this:
+
+summary(lm(InflatedFreq ~ Written, wbank_sums))
+summary(lm(InflatedFreq ~ Systematicity, wbank_sums))			# basically no r-squared
+
+## For modeling main data, center:
+
+wbank <- mutate(wbank,
+	Written_c = Written - mean(Written, na.rm = T),
+	Systematicity_c = Systematicity - mean(Systematicity, na.rm = T),
+	InflatedFreq_c = InflatedFreq - mean(InflatedFreq, na.rm = T),
+	WordFreq_c = WordFreq - mean(WordFreq, na.rm = T),
+	Age_c = Age - mean(Age, na.rm = T))
+
+## Model this relationship, first with the full data:
+
+xmdl <- lmer(InflatedFreq ~ Written_c + Age_c + WordFreq_c + 
+	Written_c:Age_c + WordFreq_c:Age_c + 
+	(1|Word), wbank)
+summary(xmdl)
+
+## Calculate frequency change slopes, i.e., words that
+## decreased or increased in frequency over the 14 month period:
+
+wbank_slopes <- data.frame(Word = unique(wbank$Word))
+wbank_slopes$Slope <- numeric(nrow(wbank_slopes))
+for (i in wbank_slopes$Word) {
+	xtemp <- wbank[wbank$Word == i,]
+	wbank_slopes[wbank_slopes$Word == i,]$Slope <- coef(lm(LogFreq ~ Age, xtemp))[2]
+	}
+
+## Add iconicity:
+
+wbank_slopes$Written <- icon[match(wbank_slopes$Word, icon$Word), ]$Written
+
+## Make a plot of frequency increase/decrease (slopes) against iconicity:
+
+quartz('', 9, 6)
+ggplot(wbank_slopes,
+	aes(x = Written, y = Slope)) +
+	geom_point(shape = 16) +
+	geom_smooth(method = 'lm')
+
+summary(lm(Slope ~ Written, wbank_slopes))
+
+
+
+
+##------------------------------------------------------------------
+## Part #5: Parental input frequency
 ##------------------------------------------------------------------
 
 ## Create a relative frequency measure (which words are relatively more inflated in input frequency):
